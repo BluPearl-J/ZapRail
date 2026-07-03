@@ -1,0 +1,22 @@
+{
+  "webhookEvents": [
+    {
+      "id": "96c67baf-9afb-4b1a-81e1-44a9cdede85f",
+      "event_id": "test-12345",
+      "event_type": "payment_success",
+      "payload": {
+        "eventId": "test-12345",
+        "eventType": "payment_success",
+        "data": {
+          "transactionId": "test-12345",
+          "amount": 1000
+        }
+      },
+      "signature_valid": false,
+      "received_at": "2026-06-27T20:27:38.588Z"
+    }
+  ],
+  "transactions": [],
+  "refunds": [],
+  "zapSubscriptions": []
+}

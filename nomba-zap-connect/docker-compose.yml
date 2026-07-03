@@ -1,0 +1,40 @@
+version: '3.9'
+
+services:
+  app:
+    build: .
+    container_name: nomba-zap-connect
+    restart: unless-stopped
+    ports:
+      - '4000:4000'
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    networks:
+      - nomba-net
+    # Use the reliable Node-based health check
+    healthcheck:
+      test: ["CMD", "node", "healthcheck.js"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: ngrok-tunnel
+    restart: unless-stopped
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
+    command: http app:4000
+    networks:
+      - nomba-net
+    # This ensures ngrok only starts when the app is confirmed healthy
+    depends_on:
+      app:
+        condition: service_healthy
+
+networks:
+  nomba-net:
+    driver: bridge
