@@ -7,10 +7,6 @@ const { dispatchToZapier } = require('../lib/dispatchToZapier');
 
 const router = express.Router();
 
-/**
- * Helper: Fire-and-forget Telegram Alerting
- * Keeps webhook response time low while ensuring monitoring
- */
 async function sendTelegramAlert(message) {
     const token = process.env.TELEGRAM_BOT_TOKEN;
     const chatId = process.env.TELEGRAM_CHAT_ID;
@@ -27,9 +23,8 @@ async function sendTelegramAlert(message) {
     }
 }
 
-
 router.post('/', async (req, res) => {
-    const rawBody = req.body; // Buffer from express.raw()
+    const rawBody = req.body;
     const signature = req.header(HEADER_NAME);
     const timestamp = req.header(TIMESTAMP_HEADER);
     const secret = process.env.NOMBA_WEBHOOK_SECRET;
@@ -48,12 +43,26 @@ router.post('/', async (req, res) => {
         return res.status(400).json({ error: 'Missing eventId on webhook payload' });
     }
 
-    // Idempotency: Guard against duplicates
     if (db.webhookEvents.exists(eventId)) {
         return res.status(200).json({ received: true, duplicate: true });
     }
 
-    // Verify Signature
+    // --- DEBUG PROBE START ---
+    const signingPayloadDebug = [
+        payload.eventType || '',
+        (payload.data || {}).requestId || '',
+        (payload.data || {}).userId || '',
+        (payload.data || {}).walletId || '',
+        (payload.data || {}).transactionId || '',
+        (payload.data || {}).type || '',
+        (payload.data || {}).time || '',
+        (payload.data || {}).responseCode || '',
+        timestamp || '',
+    ].join(':');
+
+    console.log("DEBUG: String server is HASHING:", signingPayloadDebug);
+    // --- DEBUG PROBE END ---
+
     const signatureValid = verifyNombaSignature(rawBody, signature, timestamp, secret);
 
     db.webhookEvents.insert({
@@ -70,16 +79,12 @@ router.post('/', async (req, res) => {
         return res.status(401).json({ error: 'Invalid signature' });
     }
 
-    // Acknowledge receipt to Nomba ASAP
     res.status(200).json({ received: true });
 
-    // --- Background Processing ---
     const data = payload.data || {};
 
-    // 1. Payment Success / Failure
     if (eventType === 'payment_success' || eventType === 'payment_failed') {
         const status = eventType === 'payment_success' ? 'success' : 'failed';
-
         db.transactions.upsert({
             id: uuidv4(),
             reference: data.transactionId || eventId,
@@ -91,10 +96,7 @@ router.post('/', async (req, res) => {
             raw_payload: data,
             created_at: new Date().toISOString(),
         });
-
-        // Alerting & Zapier
         sendTelegramAlert(`${status === 'success' ? '✅' : '❌'} *Payment ${status === 'success' ? 'Success' : 'Failed'}*\nRef: ${data.transactionId}\nAmt: ${data.amount} ${data.currency || 'NGN'}`);
-
         await dispatchToZapier(status === 'success' ? 'new_transaction' : 'payment_failed', {
             transactionId: data.transactionId,
             amount: data.amount,
@@ -106,7 +108,6 @@ router.post('/', async (req, res) => {
         });
     }
 
-    // 2. Payout Success / Failure
     if (eventType === 'payout_success' || eventType === 'payout_failed') {
         await dispatchToZapier(eventType, {
             transactionId: data.transactionId,
@@ -117,12 +118,9 @@ router.post('/', async (req, res) => {
         });
     }
 
-    // 3. Refunds / Reversals
     if (eventType === 'payout_refund' || eventType === 'payment_reversal') {
         db.refunds.updateStatusByReference(data.transactionId, 'processed');
-
         sendTelegramAlert(`🔄 *${eventType} processed*\nRef: ${data.transactionId}`);
-
         await dispatchToZapier('refund_completed', {
             transactionId: data.transactionId,
             amount: data.amount,
