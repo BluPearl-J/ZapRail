@@ -47,6 +47,7 @@ router.post('/', async (req, res) => {
     if (db.webhookEvents.exists(eventId)) {
         return res.status(200).json({ received: true, duplicate: true });
     }
+    console.log("DEBUG: Secret length:", secret ? secret.length : "MISSING");
 
     // Verify the signature using the raw buffer
     const signatureValid = verifyNombaSignature(rawBody, signature, timestamp, secret);
