@@ -24,6 +24,7 @@ async function sendTelegramAlert(message) {
 }
 
 router.post('/', async (req, res) => {
+    // Because of express.raw in server.js, req.body is already the Buffer we need
     const rawBody = req.body;
     const signature = req.header(HEADER_NAME);
     const timestamp = req.header(TIMESTAMP_HEADER);
@@ -32,7 +33,7 @@ router.post('/', async (req, res) => {
     let payload;
     try {
         payload = JSON.parse(rawBody.toString('utf8'));
-    } catch {
+    } catch (e) {
         return res.status(400).json({ error: 'Invalid JSON body' });
     }
 
@@ -47,22 +48,7 @@ router.post('/', async (req, res) => {
         return res.status(200).json({ received: true, duplicate: true });
     }
 
-    // --- DEBUG PROBE START ---
-    const signingPayloadDebug = [
-        payload.eventType || '',
-        (payload.data || {}).requestId || '',
-        (payload.data || {}).userId || '',
-        (payload.data || {}).walletId || '',
-        (payload.data || {}).transactionId || '',
-        (payload.data || {}).type || '',
-        (payload.data || {}).time || '',
-        (payload.data || {}).responseCode || '',
-        timestamp || '',
-    ].join(':');
-
-    console.log("DEBUG: String server is HASHING:", signingPayloadDebug);
-    // --- DEBUG PROBE END ---
-
+    // Verify the signature using the raw buffer
     const signatureValid = verifyNombaSignature(rawBody, signature, timestamp, secret);
 
     db.webhookEvents.insert({
